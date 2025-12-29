@@ -1,18 +1,31 @@
 package org.example.sensenebula.service;
 
+import org.example.sensenebula.model.MaskDetectionRecord;
+import org.example.sensenebula.repository.MaskDetectionRepository;
+import org.example.sensenebula.task.MaskSyncTask;
 import org.example.sensenebula.utils.SenseApi;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /***
  * 定义和人脸相关的 service 层服务，这一层的不同方法，可以获取到商汤边缘计算盒中不同接口的数据
  */
 @Service
 public class PeoplePhotoService {
+
+    @Autowired
+    private MaskDetectionRepository maskRepository;
+
+    @Autowired
+    private MaskSyncTask maskSyncTask;
+
     /**
      * 这个方法 调用 SenseApi.getSnapPhoto() 获取接口《3.13 抓拍图片条件查询》的数据
      *
@@ -132,60 +145,81 @@ public class PeoplePhotoService {
             faceList.add(item);
         }
         return faceList;
-
     }
 
     /**
-     * 这个方法 调用 SenseApi.getSnapPhoto() 获取接口《3.13 抓拍图片条件查询》的数据
-     * 并专门提取口罩识别信息
-     *
-     * @return 将json字段打包成 List<Map<String, Object>>对象返回
+     * 【已修改】改为查询本地数据库 mask_detection_record 表
+     * 
+     * @return 将 Entity 转换为 List<Map<String, Object>> 保持前端兼容
      */
     public List<Map<String, Object>> listMaskDetection() {
-        // 复用 getSnapPhoto 获取数据
-        List<Map<String, Object>> data = SenseApi.getSnapPhoto();
-
-        List<Map<String, Object>> maskList = new ArrayList<>();
-        for (Map<String, Object> rec : data) {
-            // 1. 获取图片 base64
-            String snapImg = SenseApi.getImgBase64((String) rec.get("snap_path"));
-
-            // 2. 获取 face_attr
-            Map<String, Object> attr = (Map<String, Object>) rec.get("face_attr");
-            if (attr == null) {
-                continue; // 如果没有属性信息，跳过
-            }
-
-            // 3. 解析口罩状态
-            // st_respirator_full、st_respirator_nose、st_respirator_mouth分别表示佩戴、佩戴不完全、未佩戴
-            String respiratorStatusRaw = (String) attr.get("st_respirator");
-            String respiratorStatusCN;
-            if ("st_respirator_full".equals(respiratorStatusRaw)) {
-                respiratorStatusCN = "佩戴";
-            } else if ("st_respirator_nose".equals(respiratorStatusRaw)) {
-                respiratorStatusCN = "佩戴不完全";
-            } else if ("st_respirator_mouth".equals(respiratorStatusRaw)) {
-                respiratorStatusCN = "未佩戴";
-            } else {
-                respiratorStatusCN = "未知";
-            }
-
-            // 4. 其他辅助信息
-            String gender = "male".equals(attr.get("gender_code")) ? "男" : "女";
-            
-            // 5. 组装返回数据
+        // 1. 查询数据库，按时间倒序
+        List<MaskDetectionRecord> records = maskRepository.findAll(Sort.by(Sort.Direction.DESC, "createTime"));
+        
+        // 2. 转换为前端需要的 Map 结构
+        List<Map<String, Object>> resultList = new ArrayList<>();
+        for (MaskDetectionRecord record : records) {
             Map<String, Object> item = new HashMap<>();
-            item.put("channel", rec.get("channel"));
-            item.put("camera_name", rec.get("camera_name"));
-            item.put("trigger", rec.get("trigger")); // 抓拍时间
-            item.put("snap_img", snapImg);
-            item.put("person_gender", gender);
-            item.put("mask_status", respiratorStatusCN); // 口罩状态：佩戴/佩戴不完全/未佩戴
-            item.put("st_age_value", attr.get("st_age_value")); // 年龄
+            // 基础字段
+            item.put("id", record.getId());
+            item.put("camera_name", record.getCameraName());
+            item.put("trigger", record.getSnapTime()); 
+            item.put("snap_img", record.getSnapImgBase64());
+            item.put("person_gender", record.getPersonGender());
+            item.put("st_age_value", record.getAgeValue());
+            item.put("mask_status", record.getMaskStatus());
+            
+            // 扩展字段（数据库特有）
+            item.put("handle_status", record.getHandleStatus());
+            item.put("remark", record.getRemark());
+            item.put("create_time", record.getCreateTime());
 
-            maskList.add(item);
+            resultList.add(item);
         }
-        return maskList;
+        return resultList;
+    }
+
+    /**
+     * 手动触发同步（用于测试）
+     */
+    public void triggerSync() {
+        maskSyncTask.syncMaskData();
+    }
+
+    /**
+     * 修改口罩识别记录
+     * @param id 记录ID
+     * @param handleStatus 处理状态 (0-未处理, 1-已处理, 2-忽略)
+     * @param remark 备注信息
+     * @return 是否成功
+     */
+    public boolean updateMaskRecord(Long id, Integer handleStatus, String remark) {
+        Optional<MaskDetectionRecord> optional = maskRepository.findById(id);
+        if (optional.isPresent()) {
+            MaskDetectionRecord record = optional.get();
+            if (handleStatus != null) {
+                record.setHandleStatus(handleStatus);
+            }
+            if (remark != null) {
+                record.setRemark(remark);
+            }
+            maskRepository.save(record);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 删除口罩识别记录
+     * @param id 记录ID
+     * @return 是否成功
+     */
+    public boolean deleteMaskRecord(Long id) {
+        if (maskRepository.existsById(id)) {
+            maskRepository.deleteById(id);
+            return true;
+        }
+        return false;
     }
 
     /**

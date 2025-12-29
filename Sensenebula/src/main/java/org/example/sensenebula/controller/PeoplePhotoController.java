@@ -82,6 +82,16 @@ public class PeoplePhotoController {
         return peoplePhotoService.listWarnCar();
     }
 
+    /**
+     * 手动触发同步（测试用）
+     * 访问 /syncMaskData 即可立即触发一次数据同步
+     */
+    @GetMapping("/syncMaskData")
+    public String syncMaskData() {
+        peoplePhotoService.triggerSync();
+        return "同步任务已触发，请查看控制台日志或刷新列表";
+    }
+
     /***
      * 描述信息：获取口罩识别记录，当用户访问 /getMaskDetection 会自动执行这个函数 getMaskDetection
      * <p>
