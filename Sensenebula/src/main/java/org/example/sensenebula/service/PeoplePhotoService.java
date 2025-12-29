@@ -1,13 +1,20 @@
 package org.example.sensenebula.service;
 
+import org.example.sensenebula.dto.MaskQueryDTO;
 import org.example.sensenebula.model.MaskDetectionRecord;
 import org.example.sensenebula.repository.MaskDetectionRepository;
 import org.example.sensenebula.task.MaskSyncTask;
 import org.example.sensenebula.utils.SenseApi;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
+import javax.persistence.criteria.Predicate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -181,6 +188,81 @@ public class PeoplePhotoService {
     }
 
     /**
+     * 分页多条件查询
+     */
+    public Map<String, Object> searchMaskDetection(MaskQueryDTO query) {
+        // 1. 构造查询条件
+        Specification<MaskDetectionRecord> spec = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            // 通道号
+            if (query.getChannel() != null) {
+                predicates.add(cb.equal(root.get("channel"), query.getChannel()));
+            }
+            // 摄像机名称（模糊查询）
+            if (StringUtils.hasText(query.getCameraName())) {
+                predicates.add(cb.like(root.get("cameraName"), "%" + query.getCameraName() + "%"));
+            }
+            // 口罩状态
+            if (StringUtils.hasText(query.getMaskStatus())) {
+                predicates.add(cb.equal(root.get("maskStatus"), query.getMaskStatus()));
+            }
+            // 性别
+            if (StringUtils.hasText(query.getPersonGender())) {
+                predicates.add(cb.equal(root.get("personGender"), query.getPersonGender()));
+            }
+            // 年龄范围
+            if (query.getMinAge() != null) {
+                predicates.add(cb.ge(root.get("ageValue"), query.getMinAge()));
+            }
+            if (query.getMaxAge() != null) {
+                predicates.add(cb.le(root.get("ageValue"), query.getMaxAge()));
+            }
+            // 时间范围 (字符串比较，前提是格式统一 YYYY-MM-DD HH:mm:ss)
+            if (StringUtils.hasText(query.getStartTime())) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("snapTime"), query.getStartTime()));
+            }
+            if (StringUtils.hasText(query.getEndTime())) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("snapTime"), query.getEndTime()));
+            }
+
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        // 2. 分页排序
+        // PageRequest 页码从 0 开始，所以要减 1
+        int page = Math.max(0, query.getPage() - 1);
+        Pageable pageable = PageRequest.of(page, query.getSize(), Sort.by(Sort.Direction.DESC, "snapTime"));
+
+        // 3. 执行查询
+        Page<MaskDetectionRecord> pageResult = maskRepository.findAll(spec, pageable);
+
+        // 4. 封装返回结果
+        Map<String, Object> result = new HashMap<>();
+        result.put("total", pageResult.getTotalElements());
+        result.put("totalPages", pageResult.getTotalPages());
+        
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (MaskDetectionRecord record : pageResult.getContent()) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", record.getId());
+            item.put("camera_name", record.getCameraName());
+            item.put("channel", record.getChannel());
+            item.put("trigger", record.getSnapTime());
+            item.put("snap_img", record.getSnapImgBase64());
+            item.put("person_gender", record.getPersonGender());
+            item.put("st_age_value", record.getAgeValue());
+            item.put("mask_status", record.getMaskStatus());
+            item.put("handle_status", record.getHandleStatus());
+            item.put("remark", record.getRemark());
+            list.add(item);
+        }
+        result.put("records", list);
+
+        return result;
+    }
+
+    /**
      * 手动触发同步（用于测试）
      */
     public void triggerSync() {
@@ -192,9 +274,10 @@ public class PeoplePhotoService {
      * @param id 记录ID
      * @param handleStatus 处理状态 (0-未处理, 1-已处理, 2-忽略)
      * @param remark 备注信息
+     * @param maskStatus 口罩状态 (可选)
      * @return 是否成功
      */
-    public boolean updateMaskRecord(Long id, Integer handleStatus, String remark) {
+    public boolean updateMaskRecord(Long id, Integer handleStatus, String remark, String maskStatus) {
         Optional<MaskDetectionRecord> optional = maskRepository.findById(id);
         if (optional.isPresent()) {
             MaskDetectionRecord record = optional.get();
@@ -203,6 +286,9 @@ public class PeoplePhotoService {
             }
             if (remark != null) {
                 record.setRemark(remark);
+            }
+            if (StringUtils.hasText(maskStatus)) {
+                record.setMaskStatus(maskStatus);
             }
             maskRepository.save(record);
             return true;

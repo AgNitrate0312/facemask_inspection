@@ -1,5 +1,6 @@
 package org.example.sensenebula.controller;
 
+import org.example.sensenebula.dto.MaskQueryDTO;
 import org.example.sensenebula.service.PeoplePhotoService;
 import org.springframework.web.bind.annotation.*;
 
@@ -105,14 +106,23 @@ public class PeoplePhotoController {
     }
 
     /**
+     * 分页查询口罩识别记录（支持多条件筛选）
+     */
+    @PostMapping("/searchMaskDetection")
+    public Map<String, Object> searchMaskDetection(@RequestBody MaskQueryDTO query) {
+        return peoplePhotoService.searchMaskDetection(query);
+    }
+
+    /**
      * 更新口罩识别记录
-     * 请求示例: /updateMaskRecord?id=1&handleStatus=1&remark=已处理
+     * 请求示例: /updateMaskRecord?id=1&handleStatus=1&remark=已处理&maskStatus=未佩戴
      */
     @PostMapping("/updateMaskRecord")
     public String updateMaskRecord(@RequestParam Long id,
                                    @RequestParam(required = false) Integer handleStatus,
-                                   @RequestParam(required = false) String remark) {
-        boolean success = peoplePhotoService.updateMaskRecord(id, handleStatus, remark);
+                                   @RequestParam(required = false) String remark,
+                                   @RequestParam(required = false) String maskStatus) {
+        boolean success = peoplePhotoService.updateMaskRecord(id, handleStatus, remark, maskStatus);
         return success ? "更新成功" : "更新失败：记录不存在";
     }
 
