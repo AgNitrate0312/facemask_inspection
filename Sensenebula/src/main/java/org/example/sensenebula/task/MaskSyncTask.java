@@ -85,16 +85,26 @@ public class MaskSyncTask {
             
             // 年龄
             Integer age = null;
-            if (attr.get("st_age_value") != null) {
+            Object ageObj = attr.get("st_age_value");
+            if (ageObj != null) {
                 try {
-                    age = Integer.parseInt(attr.get("st_age_value").toString());
-                } catch (NumberFormatException ignored) {}
+                    // 先转为 Double（因为JSON中的数字可能是小数），再取整
+                    double d = Double.parseDouble(ageObj.toString());
+                    age = (int) d;
+                } catch (NumberFormatException e) {
+                    System.err.println("年龄解析失败: " + ageObj);
+                }
             }
 
             // 3. 构建实体对象
             MaskDetectionRecord record = new MaskDetectionRecord();
             record.setSnapId(snapId);
             record.setCameraName((String) rec.get("camera_name"));
+            if (rec.get("channel") != null) {
+                try {
+                    record.setChannel(Integer.parseInt(rec.get("channel").toString()));
+                } catch (Exception ignored) {}
+            }
             record.setSnapTime((String) rec.get("trigger"));
             record.setSnapImgBase64(snapImg);
             record.setPersonGender(gender);

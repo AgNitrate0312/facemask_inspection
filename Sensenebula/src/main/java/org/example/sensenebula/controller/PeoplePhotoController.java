@@ -103,4 +103,26 @@ public class PeoplePhotoController {
     public List<Map<String, Object>> getMaskDetection() {
         return peoplePhotoService.listMaskDetection();
     }
+
+    /**
+     * 更新口罩识别记录
+     * 请求示例: /updateMaskRecord?id=1&handleStatus=1&remark=已处理
+     */
+    @PostMapping("/updateMaskRecord")
+    public String updateMaskRecord(@RequestParam Long id,
+                                   @RequestParam(required = false) Integer handleStatus,
+                                   @RequestParam(required = false) String remark) {
+        boolean success = peoplePhotoService.updateMaskRecord(id, handleStatus, remark);
+        return success ? "更新成功" : "更新失败：记录不存在";
+    }
+
+    /**
+     * 删除口罩识别记录
+     * 请求示例: /deleteMaskRecord?id=1
+     */
+    @PostMapping("/deleteMaskRecord")
+    public String deleteMaskRecord(@RequestParam Long id) {
+        boolean success = peoplePhotoService.deleteMaskRecord(id);
+        return success ? "删除成功" : "删除失败：记录不存在";
+    }
 }

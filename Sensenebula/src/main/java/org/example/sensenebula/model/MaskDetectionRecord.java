@@ -18,6 +18,10 @@ public class MaskDetectionRecord {
     @Column(name = "camera_name", length = 64)
     private String cameraName;
 
+    /** 通道号 */
+    @Column(name = "channel")
+    private Integer channel;
+
     /** 抓拍时间(trigger) */
     @Column(name = "snap_time", length = 32)
     private String snapTime;
@@ -91,6 +95,14 @@ public class MaskDetectionRecord {
 
     public void setCameraName(String cameraName) {
         this.cameraName = cameraName;
+    }
+
+    public Integer getChannel() {
+        return channel;
+    }
+
+    public void setChannel(Integer channel) {
+        this.channel = channel;
     }
 
     public String getSnapTime() {

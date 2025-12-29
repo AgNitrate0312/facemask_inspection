@@ -163,6 +163,7 @@ public class PeoplePhotoService {
             // 基础字段
             item.put("id", record.getId());
             item.put("camera_name", record.getCameraName());
+            item.put("channel", record.getChannel()); // 新增：返回通道号
             item.put("trigger", record.getSnapTime()); 
             item.put("snap_img", record.getSnapImgBase64());
             item.put("person_gender", record.getPersonGender());
