@@ -3,6 +3,7 @@ import PageOne from '../components/PageOne.vue'
 import PageTwo from '../components/PageTwo.vue'
 import PageThree from '../components/PageThree.vue'
 import PageFour from '../components/PageFour.vue'
+import PageFourMock from '../components/PageFourMock.vue'
 import PageFive from '../components/PageFive.vue'
 
 const routes = [
@@ -12,6 +13,7 @@ const routes = [
   { path: '/page-three', component: PageThree },
   { path: '/page-four',  component: PageFour },
   { path: '/page-five',  component: PageFive },
+  { path: '/page-four-mock',  component: PageFourMock },
 ]
 
 const router = createRouter({

@@ -1,233 +1,590 @@
 <template>
-  <div class="page-four-mock">
-    <h2 style="margin-bottom: 16px">口罩佩戴识别记录 (Mock演示)</h2>
+  <div class="page-container">
+    <div class="header-section">
+      <div class="title-bar">
+        <h2>😷 口罩佩戴识别监控 (Mock演示)</h2>
+        <el-tag type="warning" effect="dark">测试模式</el-tag>
+      </div>
+      
+      <!-- 筛选栏 -->
+      <div class="filter-card">
+        <el-form :inline="true" :model="queryForm" size="default" class="search-form">
+          <el-form-item label="通道">
+            <el-input v-model.number="queryForm.channel" placeholder="例如: 1" style="width: 100px">
+              <template #prefix><el-icon><Monitor /></el-icon></template>
+            </el-input>
+          </el-form-item>
+          <el-form-item label="摄像机">
+            <el-input v-model="queryForm.cameraName" placeholder="输入名称" style="width: 140px">
+              <template #prefix><el-icon><VideoCamera /></el-icon></template>
+            </el-input>
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="queryForm.maskStatus" placeholder="全部状态" clearable style="width: 120px">
+              <el-option label="✅ 佩戴" value="佩戴" />
+              <el-option label="❌ 未佩戴" value="未佩戴" />
+              <el-option label="⚠️ 佩戴不全" value="佩戴不完全" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="性别">
+            <el-select v-model="queryForm.personGender" placeholder="全部" clearable style="width: 100px">
+              <el-option label="男" value="男" />
+              <el-option label="女" value="女" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="年龄">
+             <div class="age-range">
+               <el-input v-model.number="queryForm.minAge" placeholder="Min" style="width: 60px" />
+               <span class="separator">-</span>
+               <el-input v-model.number="queryForm.maxAge" placeholder="Max" style="width: 60px" />
+             </div>
+          </el-form-item>
+          
+          <el-form-item class="action-buttons">
+            <el-button type="primary" @click="handleSearch" :icon="Search">查询</el-button>
+            <el-button @click="resetQuery" :icon="Refresh">重置</el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+    </div>
 
-    <el-alert title="当前为模拟数据展示模式，仅用于效果预览" type="success" :closable="false" style="margin-bottom: 16px" />
-
-    <el-row :gutter="16">
-      <el-col v-for="(item, idx) in list" :key="idx" :xs="24" :sm="12" :md="8" style="margin-bottom: 16px">
-        <el-card shadow="hover" class="mask-card" :body-style="{ padding: '10px' }">
-          <el-row :gutter="10">
-            <!-- 左侧：抓拍图片 -->
-            <el-col :span="10" class="left-img">
+    <!-- 列表区域 -->
+    <div class="content-area" v-loading="loading">
+      <el-empty v-if="list.length === 0 && !loading" description="暂无符合条件的记录" />
+      
+      <el-row :gutter="20" v-else>
+        <el-col v-for="(item, idx) in list" :key="item.id" :xs="24" :sm="12" :md="8" :lg="6" style="margin-bottom: 20px">
+          <div class="record-card">
+            <!-- 图片区域 -->
+            <div class="card-image-wrapper">
               <el-image 
-                :src="item.snap_img.startsWith('data:') ? item.snap_img : `data:image/jpeg;base64,${item.snap_img}`" 
-                fit="contain" 
-                class="snap-img" 
+                :src="item.snap_img" 
+                fit="cover" 
+                class="card-img" 
+                loading="lazy"
+                :preview-src-list="[item.snap_img]"
               >
                 <template #error>
-                  <div class="image-slot">
-                    <el-icon><icon-picture /></el-icon>
+                  <div class="image-error">
+                    <el-icon :size="32"><Picture /></el-icon>
+                    <span>暂无图片</span>
                   </div>
                 </template>
               </el-image>
-            </el-col>
+              
+              <!-- 悬浮状态标签 -->
+              <div class="card-status-badge">
+                <el-tag :type="getStatusType(item.mask_status)" effect="dark" round>
+                  {{ item.mask_status }}
+                </el-tag>
+              </div>
+            </div>
 
-            <!-- 右侧：信息展示 -->
-            <el-col :span="14" class="right-info">
-              <div class="info-block">
-                <div class="info-row">
-                  <span class="label">时间：</span>
+            <!-- 信息区域 -->
+            <div class="card-content">
+              <div class="card-header">
+                <div class="camera-info">
+                  <el-icon><VideoCamera /></el-icon>
+                  <span class="camera-name" :title="item.camera_name">{{ item.camera_name }}</span>
+                </div>
+                <span class="channel-badge">CH{{ item.channel }}</span>
+              </div>
+
+              <div class="info-grid">
+                <div class="info-item">
+                  <span class="label">时间</span>
                   <span class="value">{{ formatTime(item.trigger) }}</span>
                 </div>
-                <div class="info-row">
-                  <span class="label">位置：</span>
-                  <span class="value">{{ item.camera_name }} (通道{{ item.channel }})</span>
-                </div>
-                <div class="info-row">
-                  <span class="label">属性：</span>
-                  <span class="value">{{ item.person_gender }} / {{ Number(item.st_age_value).toFixed(0) }}岁</span>
-                </div>
-                
-                <el-divider style="margin: 8px 0" />
-                
-                <div class="status-box">
-                  <span class="label">佩戴状态：</span>
-                  <!-- 根据状态显示不同颜色的标签/文字 -->
-                  <el-tag :type="getStatusType(item.mask_status)" effect="dark" class="status-tag">
-                    {{ item.mask_status }}
-                  </el-tag>
+                <div class="info-item">
+                  <span class="label">属性</span>
+                  <span class="value">
+                    <el-icon v-if="item.person_gender==='男'" color="#409EFF"><Male /></el-icon>
+                    <el-icon v-else color="#F56C6C"><Female /></el-icon>
+                    {{ item.st_age_value }}岁
+                  </span>
                 </div>
               </div>
-            </el-col>
-          </el-row>
-        </el-card>
-      </el-col>
-    </el-row>
+
+              <!-- 处理状态条 -->
+              <div class="handle-bar" :class="getHandleClass(item.handle_status)">
+                <div class="handle-status">
+                   <el-icon><component :is="getHandleIcon(item.handle_status)" /></el-icon>
+                   <span>{{ getHandleStatusText(item.handle_status) }}</span>
+                </div>
+                <div class="actions">
+                   <el-button type="primary" link size="small" @click="openEditDialog(item)">处理</el-button>
+                   <el-popconfirm title="确定删除?" @confirm="handleDelete(item.id)">
+                      <template #reference>
+                        <el-button type="danger" link size="small">删除</el-button>
+                      </template>
+                   </el-popconfirm>
+                </div>
+              </div>
+              
+              <div v-if="item.remark" class="remark-box">
+                <el-icon><Comment /></el-icon>
+                <span class="remark-text">{{ item.remark }}</span>
+              </div>
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+
+      <!-- 分页控件 -->
+      <div class="pagination-wrapper">
+        <el-pagination
+          v-model:current-page="queryForm.page"
+          v-model:page-size="queryForm.size"
+          :page-sizes="[8, 12, 24]"
+          layout="total, sizes, prev, pager, next, jumper"
+          :total="total"
+          @size-change="handleSearch"
+          @current-change="handleSearch"
+          background
+        />
+      </div>
+    </div>
+
+    <!-- 处理弹窗 -->
+    <el-dialog v-model="dialogVisible" title="📝 记录处理" width="450px" destroy-on-close align-center>
+      <el-form :model="editForm" label-width="80px" class="edit-form">
+        <el-form-item label="识别修正">
+          <el-radio-group v-model="editForm.maskStatus" size="small">
+            <el-radio-button label="佩戴" />
+            <el-radio-button label="未佩戴" />
+            <el-radio-button label="佩戴不完全" />
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="处理状态">
+           <el-select v-model="editForm.handleStatus" style="width: 100%">
+            <el-option label="⏳ 未处理" :value="0" />
+            <el-option label="✅ 已处理" :value="1" />
+            <el-option label="🚫 忽略" :value="2" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注说明">
+          <el-input 
+            v-model="editForm.remark" 
+            type="textarea" 
+            :rows="3" 
+            placeholder="请填写处理意见或情况说明..." 
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="submitEdit">确认提交</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { Picture as IconPicture } from '@element-plus/icons-vue'
+import { onMounted, ref, reactive } from 'vue'
+import { 
+  Monitor, VideoCamera, Search, Refresh, Picture, 
+  Male, Female, CircleCheck, Warning, CircleClose, Comment 
+} from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 
-/**
- * 接口数据定义
- */
+// --- 假数据生成器 ---
+const generateMockData = (count: number) => {
+  const statuses = ['佩戴', '未佩戴', '佩戴不完全']
+  const genders = ['男', '女']
+  const remarks = ['', '已教育', '误报', '', '']
+  
+  return Array.from({ length: count }).map((_, i) => ({
+    id: i + 1,
+    camera_name: `教学楼${['东','西','南','北'][Math.floor(Math.random()*4)]}门摄像头`,
+    channel: Math.floor(Math.random() * 4) + 1,
+    trigger: new Date(Date.now() - Math.random() * 1000000000).toISOString().replace('Z', ''),
+    mask_status: statuses[Math.floor(Math.random() * statuses.length)],
+    person_gender: genders[Math.floor(Math.random() * genders.length)],
+    st_age_value: Math.floor(Math.random() * 40 + 18).toString(),
+    snap_img: `https://picsum.photos/300/200?random=${i}`, // 使用随机占位图
+    handle_status: Math.floor(Math.random() * 3), // 0, 1, 2
+    remark: remarks[Math.floor(Math.random() * remarks.length)]
+  }))
+}
+
+// 全部假数据
+const allMockData = generateMockData(50)
+
+// --- 状态定义 ---
 interface MaskRecord {
-  camera_name: string         
-  channel: number             
-  trigger: string             
-  mask_status: string         
-  person_gender: string       
-  st_age_value: string        
-  snap_img: string            
+  id: number
+  camera_name: string
+  channel: number
+  trigger: string
+  mask_status: string
+  person_gender: string
+  st_age_value: string
+  snap_img: string
+  handle_status: number
+  remark: string
 }
 
 const list = ref<MaskRecord[]>([])
+const total = ref(0)
+const loading = ref(false)
+const dialogVisible = ref(false)
 
-onMounted(() => {
-  // 生成模拟数据
-  list.value = [
-    {
-      camera_name: '大门入口',
-      channel: 1,
-      trigger: '2025-01-23 12:07:53',
-      mask_status: '未佩戴',
-      person_gender: '女',
-      st_age_value: '26.000000',
-      snap_img: '' // 暂无图片，显示默认占位符
-    },
-    {
-      camera_name: '办公区域',
-      channel: 2,
-      trigger: '2025-01-23 12:08:10',
-      mask_status: '佩戴',
-      person_gender: '男',
-      st_age_value: '30.500000',
-      snap_img: ''
-    },
-    {
-      camera_name: '电梯口',
-      channel: 3,
-      trigger: '2025-01-23 12:09:22',
-      mask_status: '佩戴不完全',
-      person_gender: '男',
-      st_age_value: '45.000000',
-      snap_img: ''
-    },
-    {
-      camera_name: '前台大厅',
-      channel: 4,
-      trigger: '2025-01-23 12:15:30',
-      mask_status: '佩戴',
-      person_gender: '女',
-      st_age_value: '22.000000',
-      snap_img: ''
-    },
-    {
-      camera_name: '后门出口',
-      channel: 5,
-      trigger: '2025-01-23 12:20:45',
-      mask_status: '未佩戴',
-      person_gender: '男',
-      st_age_value: '35.000000',
-      snap_img: ''
-    }
-  ]
+const queryForm = reactive({
+  channel: undefined as number | undefined,
+  cameraName: '',
+  maskStatus: '',
+  personGender: '',
+  minAge: undefined as number | undefined,
+  maxAge: undefined as number | undefined,
+  page: 1,
+  size: 12
 })
 
-function getStatusType(status: string) {
+const editForm = reactive({
+  id: 0,
+  handleStatus: 0,
+  remark: '',
+  maskStatus: ''
+})
+
+// --- 模拟查询逻辑 ---
+const handleSearch = () => {
+  loading.value = true
+  setTimeout(() => {
+    // 1. 过滤
+    let filtered = allMockData.filter(item => {
+      if (queryForm.channel && item.channel !== queryForm.channel) return false
+      if (queryForm.cameraName && !item.camera_name.includes(queryForm.cameraName)) return false
+      if (queryForm.maskStatus && item.mask_status !== queryForm.maskStatus) return false
+      if (queryForm.personGender && item.person_gender !== queryForm.personGender) return false
+      const age = parseInt(item.st_age_value)
+      if (queryForm.minAge && age < queryForm.minAge) return false
+      if (queryForm.maxAge && age > queryForm.maxAge) return false
+      return true
+    })
+    
+    // 2. 排序 (时间倒序)
+    filtered.sort((a, b) => new Date(b.trigger).getTime() - new Date(a.trigger).getTime())
+
+    // 3. 分页
+    total.value = filtered.length
+    const start = (queryForm.page - 1) * queryForm.size
+    list.value = filtered.slice(start, start + queryForm.size)
+    
+    loading.value = false
+    ElMessage.success('数据已刷新 (Mock)')
+  }, 500)
+}
+
+const resetQuery = () => {
+  queryForm.channel = undefined
+  queryForm.cameraName = ''
+  queryForm.maskStatus = ''
+  queryForm.personGender = ''
+  queryForm.minAge = undefined
+  queryForm.maxAge = undefined
+  queryForm.page = 1
+  handleSearch()
+}
+
+// --- 辅助函数 ---
+const getStatusType = (status: string) => {
   switch (status) {
-    case '未佩戴': return 'danger'       // 红色
-    case '佩戴不完全': return 'warning'   // 黄色
-    case '佩戴': return 'success'        // 绿色
-    default: return 'info'               // 灰色
+    case '未佩戴': return 'danger'
+    case '佩戴不完全': return 'warning'
+    case '佩戴': return 'success'
+    default: return 'info'
   }
 }
 
-function formatTime(timeStr: string) {
-  if (!timeStr) return '--'
-  return timeStr.replace('T', ' ')
+const getHandleStatusText = (status: number) => {
+  switch (status) {
+    case 0: return '待处理'
+    case 1: return '已处理'
+    case 2: return '已忽略'
+    default: return '未知'
+  }
 }
+
+const getHandleClass = (status: number) => {
+  switch (status) {
+    case 0: return 'status-pending'
+    case 1: return 'status-done'
+    case 2: return 'status-ignored'
+    default: return ''
+  }
+}
+
+const getHandleIcon = (status: number) => {
+   switch (status) {
+    case 0: return 'Warning'
+    case 1: return 'CircleCheck'
+    case 2: return 'CircleClose'
+    default: return 'Warning'
+  }
+}
+
+const formatTime = (timeStr: string) => {
+  if (!timeStr) return '--'
+  return timeStr.replace('T', ' ').substring(5, 16)
+}
+
+// --- 编辑逻辑 (Mock) ---
+const openEditDialog = (item: MaskRecord) => {
+  editForm.id = item.id
+  editForm.handleStatus = item.handle_status
+  editForm.remark = item.remark
+  editForm.maskStatus = item.mask_status
+  dialogVisible.value = true
+}
+
+const submitEdit = () => {
+  // 模拟更新
+  const target = allMockData.find(i => i.id === editForm.id)
+  if (target) {
+    target.handle_status = editForm.handleStatus
+    target.remark = editForm.remark
+    target.mask_status = editForm.maskStatus
+    ElMessage.success('更新成功 (Mock)')
+    dialogVisible.value = false
+    handleSearch() // 刷新视图
+  }
+}
+
+const handleDelete = (id: number) => {
+  const idx = allMockData.findIndex(i => i.id === id)
+  if (idx !== -1) {
+    allMockData.splice(idx, 1)
+    ElMessage.success('删除成功 (Mock)')
+    handleSearch()
+  }
+}
+
+onMounted(() => {
+  handleSearch()
+})
 </script>
 
 <style scoped>
-.page-four-mock {
-  padding: 20px;
-  background: #f5f7fa;
-  min-height: 100%;
+.page-container {
+  padding: 24px;
+  background-color: #f5f7fa;
+  min-height: 100vh;
 }
 
-.mask-card {
+.header-section {
+  margin-bottom: 24px;
+}
+
+.title-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.title-bar h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0;
+}
+
+.filter-card {
+  background: white;
+  padding: 20px 20px 0 20px;
   border-radius: 8px;
-  transition: all 0.3s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
 
-.mask-card:hover {
-  transform: translateY(-2px);
+.search-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
-.left-img {
+.age-range {
   display: flex;
   align-items: center;
-  justify-content: center;
-  background-color: #f0f2f5;
-  border-radius: 4px;
-  height: 140px;
-  overflow: hidden;
 }
 
-.snap-img {
-  width: 100%;
-  height: 100%;
-}
-
-.image-slot {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-  height: 100%;
-  background: #f5f7fa;
+.separator {
+  margin: 0 8px;
   color: #909399;
-  font-size: 24px;
 }
 
-.right-info {
+.content-area {
+  min-height: 400px;
+}
+
+/* 卡片样式优化 */
+.record-card {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid #ebeef5;
+  display: flex;
+  flex-direction: column;
+}
+
+.record-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+  border-color: transparent;
+}
+
+.card-image-wrapper {
+  position: relative;
+  height: 180px;
+  overflow: hidden;
+  background: #f5f7fa;
+}
+
+.card-img {
+  width: 100%;
+  height: 100%;
+  transition: transform 0.5s ease;
+}
+
+.record-card:hover .card-img {
+  transform: scale(1.05);
+}
+
+.image-error {
+  height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
+  color: #c0c4cc;
+  font-size: 14px;
+  gap: 8px;
 }
 
-.info-block {
-  padding: 4px 0;
+.card-status-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
 }
 
-.info-row {
-  margin-bottom: 6px;
-  font-size: 13px;
-  line-height: 1.4;
+.card-content {
+  padding: 16px;
+  flex: 1;
   display: flex;
+  flex-direction: column;
 }
 
-.info-row .label {
-  color: #909399;
-  width: 45px;
-  flex-shrink: 0;
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
 }
 
-.info-row .value {
-  color: #606266;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status-box {
+.camera-info {
   display: flex;
   align-items: center;
-  margin-top: 8px;
+  gap: 4px;
+  color: #606266;
+  font-weight: 500;
+  font-size: 14px;
+  flex: 1;
+  overflow: hidden;
 }
 
-.status-box .label {
-  font-size: 13px;
+.camera-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-badge {
+  background: #f0f2f5;
   color: #909399;
-  margin-right: 8px;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
 }
 
-.status-tag {
-  font-weight: bold;
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.info-item .label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.info-item .value {
+  font-size: 14px;
+  color: #303133;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.handle-bar {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid #ebeef5;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.handle-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* 状态颜色 */
+.status-pending { color: #e6a23c; }
+.status-done { color: #67c23a; }
+.status-ignored { color: #909399; }
+
+.remark-box {
+  margin-top: 12px;
+  background: #fdf6ec;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #e6a23c;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.remark-text {
+  line-height: 1.4;
+}
+
+.pagination-wrapper {
+  margin-top: 32px;
+  display: flex;
+  justify-content: center;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 </style>
