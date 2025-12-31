@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+import javax.servlet.http.HttpServletResponse;
+
 @RestController
 public class PeoplePhotoController {
     // 声明一个服务层的对象，后续直接通过这个对象调用里面的方法
@@ -134,5 +136,21 @@ public class PeoplePhotoController {
     public String deleteMaskRecord(@RequestParam Long id) {
         boolean success = peoplePhotoService.deleteMaskRecord(id);
         return success ? "删除成功" : "删除失败：记录不存在";
+    }
+
+    /**
+     * 获取统计数据
+     */
+    @GetMapping("/getMaskStatistics")
+    public Map<String, Object> getMaskStatistics() {
+        return peoplePhotoService.getMaskStatistics();
+    }
+
+    /**
+     * 导出 Excel
+     */
+    @PostMapping("/exportMaskRecords")
+    public void exportMaskRecords(@RequestBody MaskQueryDTO query, HttpServletResponse response) throws Exception {
+        peoplePhotoService.exportMaskRecords(query, response);
     }
 }

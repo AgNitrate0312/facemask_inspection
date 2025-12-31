@@ -1,5 +1,7 @@
 package org.example.sensenebula.service;
 
+import com.alibaba.excel.EasyExcel;
+import org.example.sensenebula.dto.MaskExportVO;
 import org.example.sensenebula.dto.MaskQueryDTO;
 import org.example.sensenebula.model.MaskDetectionRecord;
 import org.example.sensenebula.repository.MaskDetectionRepository;
@@ -15,11 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import javax.persistence.criteria.Predicate;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import javax.servlet.http.HttpServletResponse;
+import java.net.URLEncoder;
+import java.util.*;
 
 /***
  * 定义和人脸相关的 service 层服务，这一层的不同方法，可以获取到商汤边缘计算盒中不同接口的数据
@@ -188,11 +188,10 @@ public class PeoplePhotoService {
     }
 
     /**
-     * 分页多条件查询
+     * 提取公共查询条件
      */
-    public Map<String, Object> searchMaskDetection(MaskQueryDTO query) {
-        // 1. 构造查询条件
-        Specification<MaskDetectionRecord> spec = (root, criteriaQuery, cb) -> {
+    private Specification<MaskDetectionRecord> buildSpecification(MaskQueryDTO query) {
+        return (root, criteriaQuery, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
             // 通道号
@@ -228,6 +227,14 @@ public class PeoplePhotoService {
 
             return cb.and(predicates.toArray(new Predicate[0]));
         };
+    }
+
+    /**
+     * 分页多条件查询
+     */
+    public Map<String, Object> searchMaskDetection(MaskQueryDTO query) {
+        // 1. 构造查询条件
+        Specification<MaskDetectionRecord> spec = buildSpecification(query);
 
         // 2. 分页排序
         // PageRequest 页码从 0 开始，所以要减 1
@@ -260,6 +267,91 @@ public class PeoplePhotoService {
         result.put("records", list);
 
         return result;
+    }
+
+    /**
+     * 获取统计数据
+     */
+    public Map<String, Object> getMaskStatistics() {
+        Map<String, Object> stats = new HashMap<>();
+
+        // 1. 获取今日时间范围
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        Date todayStart = cal.getTime();
+
+        cal.add(Calendar.DAY_OF_MONTH, 1);
+        Date todayEnd = cal.getTime();
+
+        // 2. 统计
+        long totalToday = maskRepository.countByCreateTimeBetween(todayStart, todayEnd);
+        long wearing = maskRepository.countByCreateTimeBetweenAndMaskStatus(todayStart, todayEnd, "佩戴");
+        long notWearing = maskRepository.countByCreateTimeBetweenAndMaskStatus(todayStart, todayEnd, "未佩戴");
+        long partial = maskRepository.countByCreateTimeBetweenAndMaskStatus(todayStart, todayEnd, "佩戴不完全");
+        long pending = maskRepository.countByHandleStatus(0);
+
+        stats.put("total_today", totalToday);
+        stats.put("mask_wearing_count", wearing);
+        stats.put("no_mask_count", notWearing);
+        stats.put("partial_mask_count", partial);
+        stats.put("pending_handle_count", pending);
+
+        // 计算佩戴率
+        double rate = 0.0;
+        if (totalToday > 0) {
+            rate = (double) wearing / totalToday * 100;
+        }
+        stats.put("wearing_rate", String.format("%.1f", rate));
+
+        return stats;
+    }
+
+    /**
+     * 导出 Excel
+     */
+    public void exportMaskRecords(MaskQueryDTO query, HttpServletResponse response) throws Exception {
+        // 1. 复用查询条件
+        Specification<MaskDetectionRecord> spec = buildSpecification(query);
+        
+        // 2. 获取全部数据（不分页）
+        List<MaskDetectionRecord> list = maskRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "snapTime"));
+
+        // 3. 转换为导出对象
+        List<MaskExportVO> exportList = new ArrayList<>();
+        for (MaskDetectionRecord record : list) {
+            MaskExportVO vo = new MaskExportVO();
+            vo.setId(record.getId());
+            vo.setCameraName(record.getCameraName());
+            vo.setChannel(record.getChannel());
+            vo.setSnapTime(record.getSnapTime());
+            vo.setPersonGender(record.getPersonGender());
+            vo.setAgeValue(record.getAgeValue());
+            vo.setMaskStatus(record.getMaskStatus());
+            vo.setRemark(record.getRemark());
+            vo.setCreateTime(record.getCreateTime());
+
+            String handleStr = "待处理";
+            if (record.getHandleStatus() != null) {
+                if (record.getHandleStatus() == 1) handleStr = "已处理";
+                else if (record.getHandleStatus() == 2) handleStr = "已忽略";
+            }
+            vo.setHandleStatusStr(handleStr);
+
+            exportList.add(vo);
+        }
+
+        // 4. 导出
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setCharacterEncoding("utf-8");
+        String fileName = URLEncoder.encode("口罩识别记录", "UTF-8").replaceAll("\\+", "%20");
+        response.setHeader("Content-disposition", "attachment;filename*=utf-8''" + fileName + ".xlsx");
+
+        EasyExcel.write(response.getOutputStream(), MaskExportVO.class)
+                .sheet("记录列表")
+                .doWrite(exportList);
     }
 
     /**

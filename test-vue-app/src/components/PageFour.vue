@@ -4,6 +4,43 @@
       <div class="title-bar">
         <h2>口罩佩戴识别监控</h2>
       </div>
+
+      <!-- 统计看板 -->
+      <div class="dashboard-section">
+        <el-row :gutter="20">
+          <el-col :span="16">
+            <div class="stat-cards">
+              <el-card shadow="hover" class="stat-card" :body-style="{ padding: '15px' }">
+                <div class="stat-content">
+                  <div class="stat-value">{{ stats.total_today || 0 }}</div>
+                  <div class="stat-label">今日抓拍</div>
+                </div>
+              </el-card>
+              <el-card shadow="hover" class="stat-card" :body-style="{ padding: '15px' }">
+                <div class="stat-content">
+                  <div class="stat-value" :class="getRateColor(stats.wearing_rate)">{{ stats.wearing_rate || 0 }}%</div>
+                  <div class="stat-label">佩戴率</div>
+                </div>
+              </el-card>
+              <el-card shadow="hover" class="stat-card" :body-style="{ padding: '15px' }">
+                <div class="stat-content">
+                  <div class="stat-value text-danger">{{ stats.no_mask_count || 0 }}</div>
+                  <div class="stat-label">未佩戴</div>
+                </div>
+              </el-card>
+              <el-card shadow="hover" class="stat-card" :body-style="{ padding: '15px' }">
+                 <div class="stat-content">
+                   <div class="stat-value text-warning">{{ stats.pending_handle_count || 0 }}</div>
+                   <div class="stat-label">待处理</div>
+                 </div>
+              </el-card>
+            </div>
+          </el-col>
+          <el-col :span="8">
+             <div class="chart-container" ref="chartRef"></div>
+          </el-col>
+        </el-row>
+      </div>
       
       <!-- 筛选栏 -->
       <div class="filter-card">
@@ -53,6 +90,7 @@
           <el-form-item class="action-buttons">
             <el-button type="primary" @click="handleSearch" :icon="Search">查询</el-button>
             <el-button @click="resetQuery" :icon="Refresh">重置</el-button>
+            <el-button type="success" @click="handleExport" :icon="Download" :loading="exportLoading">导出</el-button>
           </el-form-item>
         </el-form>
       </div>
@@ -195,8 +233,9 @@
 <script setup lang="ts">
 import { onMounted, ref, reactive } from 'vue'
 import axios from 'axios'
+import * as echarts from 'echarts'
 import { 
-  Monitor, VideoCamera, Search, Refresh, Picture, 
+  Monitor, VideoCamera, Search, Refresh, Picture, Download,
   Male, Female, CircleCheck, Warning, CircleClose, Comment 
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -235,6 +274,9 @@ const list = ref<MaskRecord[]>([])
 const total = ref(0)
 const loading = ref(false)
 const dialogVisible = ref(false)
+const exportLoading = ref(false)
+
+const chartRef = ref<HTMLElement>()
 
 const queryForm = reactive<QueryForm>({
   channel: undefined,
@@ -248,6 +290,15 @@ const queryForm = reactive<QueryForm>({
   size: 12
 })
 
+const stats = reactive({
+  total_today: 0,
+  mask_wearing_count: 0,
+  no_mask_count: 0,
+  partial_mask_count: 0,
+  pending_handle_count: 0,
+  wearing_rate: '0.0'
+})
+
 const editForm = reactive({
   id: 0,
   handleStatus: 0,
@@ -257,7 +308,66 @@ const editForm = reactive({
 
 onMounted(() => {
   handleSearch()
+  fetchStatistics()
 })
+
+const fetchStatistics = async () => {
+  try {
+    const { data } = await axios.get(`${baseURL}/getMaskStatistics`)
+    if (data) {
+      Object.assign(stats, data)
+      initChart()
+    }
+  } catch (e) {
+    console.error('获取统计失败', e)
+  }
+}
+
+const initChart = () => {
+  if (!chartRef.value) return
+  const myChart = echarts.init(chartRef.value)
+  const option = {
+    tooltip: { trigger: 'item' },
+    legend: { 
+        orient: 'vertical',
+        right: 10,
+        top: 'center',
+        itemWidth: 10,
+        itemHeight: 10,
+        textStyle: { fontSize: 12 }
+    },
+    series: [
+      {
+        name: '今日识别',
+        type: 'pie',
+        radius: ['45%', '75%'],
+        center: ['35%', '50%'],
+        avoidLabelOverlap: false,
+        itemStyle: {
+          borderRadius: 5,
+          borderColor: '#fff',
+          borderWidth: 2
+        },
+        label: { show: false, position: 'center' },
+        emphasis: {
+          label: { show: true, fontSize: 16, fontWeight: 'bold' }
+        },
+        labelLine: { show: false },
+        data: [
+          { value: stats.mask_wearing_count, name: '佩戴', itemStyle: { color: '#67c23a' } },
+          { value: stats.no_mask_count, name: '未佩戴', itemStyle: { color: '#f56c6c' } },
+          { value: stats.partial_mask_count, name: '不规范', itemStyle: { color: '#e6a23c' } }
+        ]
+      }
+    ]
+  }
+  myChart.setOption(option)
+  
+  // 监听窗口变化，自适应大小
+  window.addEventListener('resize', () => {
+      myChart.resize()
+  })
+}
 
 const handleSearch = async () => {
   loading.value = true
@@ -289,6 +399,38 @@ const handleSearch = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const handleExport = async () => {
+    exportLoading.value = true
+    try {
+        const params: any = { ...queryForm }
+        if (queryForm.dateRange && queryForm.dateRange.length === 2) {
+            params.startTime = queryForm.dateRange[0]
+            params.endTime = queryForm.dateRange[1]
+        }
+        // 不需要分页
+        delete params.page
+        delete params.size
+        
+        const response = await axios.post(`${baseURL}/exportMaskRecords`, params, {
+            responseType: 'blob'
+        })
+        
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `口罩识别记录_${new Date().getTime()}.xlsx`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        ElMessage.success('导出成功')
+    } catch (e) {
+        ElMessage.error('导出失败')
+    } finally {
+        exportLoading.value = false
+    }
 }
 
 const resetQuery = () => {
@@ -345,6 +487,13 @@ const formatTime = (timeStr: string) => {
   return timeStr.replace('T', ' ').substring(5, 16)
 }
 
+const getRateColor = (rate: string) => {
+    const val = parseFloat(rate)
+    if (val >= 90) return 'text-success'
+    if (val >= 70) return 'text-warning'
+    return 'text-danger'
+}
+
 // --- 编辑逻辑 ---
 const openEditDialog = (item: MaskRecord) => {
   editForm.id = item.id
@@ -367,6 +516,7 @@ const submitEdit = async () => {
       ElMessage.success('处理成功')
       dialogVisible.value = false
       handleSearch()
+      fetchStatistics() // 刷新统计
     } else {
       ElMessage.error('操作失败')
     }
@@ -384,6 +534,7 @@ const handleDelete = async (id: number) => {
     if (res.data && (res.data === '删除成功' || res.status === 200)) {
       ElMessage.success('删除成功')
       handleSearch()
+      fetchStatistics() // 刷新统计
     } else {
       ElMessage.error('删除失败')
     }
@@ -416,6 +567,55 @@ const handleDelete = async (id: number) => {
   font-weight: 600;
   color: #303133;
   margin: 0;
+}
+
+.dashboard-section {
+    margin-bottom: 24px;
+}
+
+.stat-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    height: 100%;
+}
+
+.stat-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    border-radius: 8px;
+}
+
+.stat-content {
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 28px;
+    font-weight: bold;
+    color: #303133;
+    margin-bottom: 8px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.stat-label {
+    font-size: 14px;
+    color: #909399;
+}
+
+.text-danger { color: #f56c6c; }
+.text-warning { color: #e6a23c; }
+.text-success { color: #67c23a; }
+
+.chart-container {
+    height: 160px;
+    background: white;
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    border: 1px solid #ebeef5;
 }
 
 .filter-card {

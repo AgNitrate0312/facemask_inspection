@@ -5,6 +5,43 @@
         <h2>😷 口罩佩戴识别监控 (Mock演示)</h2>
         <el-tag type="warning" effect="dark">测试模式</el-tag>
       </div>
+
+      <!-- 统计看板 -->
+      <div class="dashboard-section">
+        <el-row :gutter="20">
+          <el-col :span="16">
+            <div class="stat-cards">
+              <el-card shadow="hover" class="stat-card" :body-style="{ padding: '15px' }">
+                <div class="stat-content">
+                  <div class="stat-value">{{ stats.total_today }}</div>
+                  <div class="stat-label">今日抓拍</div>
+                </div>
+              </el-card>
+              <el-card shadow="hover" class="stat-card" :body-style="{ padding: '15px' }">
+                <div class="stat-content">
+                  <div class="stat-value" :class="getRateColor(stats.wearing_rate)">{{ stats.wearing_rate }}%</div>
+                  <div class="stat-label">佩戴率</div>
+                </div>
+              </el-card>
+              <el-card shadow="hover" class="stat-card" :body-style="{ padding: '15px' }">
+                <div class="stat-content">
+                  <div class="stat-value text-danger">{{ stats.no_mask_count }}</div>
+                  <div class="stat-label">未佩戴</div>
+                </div>
+              </el-card>
+              <el-card shadow="hover" class="stat-card" :body-style="{ padding: '15px' }">
+                 <div class="stat-content">
+                   <div class="stat-value text-warning">{{ stats.pending_handle_count }}</div>
+                   <div class="stat-label">待处理</div>
+                 </div>
+              </el-card>
+            </div>
+          </el-col>
+          <el-col :span="8">
+             <div class="chart-container" ref="chartRef"></div>
+          </el-col>
+        </el-row>
+      </div>
       
       <!-- 筛选栏 -->
       <div class="filter-card">
@@ -43,6 +80,7 @@
           <el-form-item class="action-buttons">
             <el-button type="primary" @click="handleSearch" :icon="Search">查询</el-button>
             <el-button @click="resetQuery" :icon="Refresh">重置</el-button>
+            <el-button type="success" @click="handleExport" :icon="Download">导出</el-button>
           </el-form-item>
         </el-form>
       </div>
@@ -183,9 +221,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, reactive } from 'vue'
+import { onMounted, ref, reactive, nextTick } from 'vue'
+import * as echarts from 'echarts'
 import { 
-  Monitor, VideoCamera, Search, Refresh, Picture, 
+  Monitor, VideoCamera, Search, Refresh, Picture, Download,
   Male, Female, CircleCheck, Warning, CircleClose, Comment 
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -231,6 +270,7 @@ const list = ref<MaskRecord[]>([])
 const total = ref(0)
 const loading = ref(false)
 const dialogVisible = ref(false)
+const chartRef = ref<HTMLElement>()
 
 const queryForm = reactive({
   channel: undefined as number | undefined,
@@ -241,6 +281,15 @@ const queryForm = reactive({
   maxAge: undefined as number | undefined,
   page: 1,
   size: 12
+})
+
+const stats = reactive({
+  total_today: 0,
+  mask_wearing_count: 0,
+  no_mask_count: 0,
+  partial_mask_count: 0,
+  pending_handle_count: 0,
+  wearing_rate: '0.0'
 })
 
 const editForm = reactive({
@@ -276,7 +325,87 @@ const handleSearch = () => {
     
     loading.value = false
     ElMessage.success('数据已刷新 (Mock)')
+    
+    // 刷新统计
+    updateMockStatistics()
   }, 500)
+}
+
+const updateMockStatistics = () => {
+  const total = allMockData.length
+  const wearing = allMockData.filter(i => i.mask_status === '佩戴').length
+  const notWearing = allMockData.filter(i => i.mask_status === '未佩戴').length
+  const partial = allMockData.filter(i => i.mask_status === '佩戴不完全').length
+  const pending = allMockData.filter(i => i.handle_status === 0).length
+  
+  stats.total_today = total
+  stats.mask_wearing_count = wearing
+  stats.no_mask_count = notWearing
+  stats.partial_mask_count = partial
+  stats.pending_handle_count = pending
+  stats.wearing_rate = total > 0 ? (wearing / total * 100).toFixed(1) : '0.0'
+  
+  initChart()
+}
+
+const initChart = () => {
+  nextTick(() => {
+    if (!chartRef.value) return
+    
+    // 销毁旧实例（防止 resize 报错）
+    const existingChart = echarts.getInstanceByDom(chartRef.value)
+    if (existingChart) existingChart.dispose()
+
+    const myChart = echarts.init(chartRef.value)
+    const option = {
+      tooltip: { trigger: 'item' },
+      legend: { 
+          orient: 'vertical',
+          right: 10,
+          top: 'center',
+          itemWidth: 10,
+          itemHeight: 10,
+          textStyle: { fontSize: 12 }
+      },
+      series: [
+        {
+          name: '今日识别',
+          type: 'pie',
+          radius: ['45%', '75%'],
+          center: ['35%', '50%'],
+          avoidLabelOverlap: false,
+          itemStyle: {
+            borderRadius: 5,
+            borderColor: '#fff',
+            borderWidth: 2
+          },
+          label: { show: false, position: 'center' },
+          emphasis: {
+            label: { show: true, fontSize: 16, fontWeight: 'bold' }
+          },
+          labelLine: { show: false },
+          data: [
+            { value: stats.mask_wearing_count, name: '佩戴', itemStyle: { color: '#67c23a' } },
+            { value: stats.no_mask_count, name: '未佩戴', itemStyle: { color: '#f56c6c' } },
+            { value: stats.partial_mask_count, name: '不规范', itemStyle: { color: '#e6a23c' } }
+          ]
+        }
+      ]
+    }
+    myChart.setOption(option)
+    
+    // 监听窗口变化
+    window.addEventListener('resize', () => {
+        myChart.resize()
+    })
+  })
+}
+
+const handleExport = () => {
+  ElMessage.success('正在导出 Excel (Mock演示)...')
+  setTimeout(() => {
+    ElMessage.success('导出成功!')
+  }, 1000)
 }
 
 const resetQuery = () => {
@@ -330,6 +459,13 @@ const getHandleIcon = (status: number) => {
 const formatTime = (timeStr: string) => {
   if (!timeStr) return '--'
   return timeStr.replace('T', ' ').substring(5, 16)
+}
+
+const getRateColor = (rate: string) => {
+    const val = parseFloat(rate)
+    if (val >= 90) return 'text-success'
+    if (val >= 70) return 'text-warning'
+    return 'text-danger'
 }
 
 // --- 编辑逻辑 (Mock) ---
@@ -391,6 +527,55 @@ onMounted(() => {
   font-weight: 600;
   color: #303133;
   margin: 0;
+}
+
+.dashboard-section {
+    margin-bottom: 24px;
+}
+
+.stat-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    height: 100%;
+}
+
+.stat-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    border-radius: 8px;
+}
+
+.stat-content {
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 28px;
+    font-weight: bold;
+    color: #303133;
+    margin-bottom: 8px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.stat-label {
+    font-size: 14px;
+    color: #909399;
+}
+
+.text-danger { color: #f56c6c; }
+.text-warning { color: #e6a23c; }
+.text-success { color: #67c23a; }
+
+.chart-container {
+    height: 160px;
+    background: white;
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    border: 1px solid #ebeef5;
 }
 
 .filter-card {
